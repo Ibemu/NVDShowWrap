@@ -3,7 +3,9 @@
 // NVDShow ラッパープラグイン
 // NVDShowWrap.cpp
 //
-// by Ibemu
+// Copyright (c) 2019 Ibemu
+// Released under the MIT license.
+// https://opensource.org/licenses/MIT
 //
 
 #include "NVDShowWrap.h"
@@ -16,10 +18,10 @@
 
 EXTERN_C_START
 
-//  Generic
+// Generic
 NVRESULT NVDSHOWWRAP_EXPORT NVDSHOWWRAP_API VSSGetPluginInfo(LPVSSPLUGININFO lpInfo);
 
-//  VSS Category D
+// VSS Category D
 NVRESULT NVDSHOWWRAP_API VSSDecGetInfo(LPVSSDECINFO lpInfo);
 NVRESULT NVDSHOWWRAP_API VSSDecIsSupported(INVSTREAM invst, DWORD dwFourCC);
 NVRESULT NVDSHOWWRAP_API VSSDecCreateInstance(DWORD dwFourCC, LPIVCOM lpivcom);
@@ -54,7 +56,7 @@ const static VSSDECINFO vssDecInfo =
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //
-// 関数
+// グローバル関数
 //
 
 NVRESULT NVDSHOWWRAP_EXPORT NVDSHOWWRAP_API VSSGetPluginInfo(LPVSSPLUGININFO lpInfo)
@@ -110,9 +112,10 @@ HWND NVDSHOWWRAP_API VSSDecConfigDialog(DWORD dwFourCC, HINSTANCE hInstance, HWN
 //
 // グローバル変数
 //
-HINSTANCE NVDSWrap_Instance;					//  DLL モジュールのインスタンスハンドル
-LONG NVDSWrap_AttachedProcessCount = 0;			//  アタッチされたプロセスの数
-LibraryFunctions NVDSWrap_Library;					//  externしたやつ
+
+HINSTANCE NVDSWrap_Instance;					// 自分のインスタンスハンドル
+LONG NVDSWrap_AttachedProcessCount = 0;			// アタッチされたプロセスの数
+LibraryFunctions NVDSWrap_Library;				// NVDShow.vssの関数とか
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -128,18 +131,34 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 	{
 	case DLL_PROCESS_ATTACH:
 	{
-		//  アタッチされたプロセス数のカウント
+		// アタッチされたプロセス数のカウント
 		if (InterlockedIncrement(&NVDSWrap_AttachedProcessCount) == 1)
 		{
-			NVDSWrap_Instance = hModule;		//  インスタンスハンドルの保存
+			NVDSWrap_Instance = hModule;
 
+			// NVDShow.vss.orgの読み込み
 			NVDSWrap_Library.dllInstance = LoadLibrary(TEXT("Plugin\\NVDShow.vss.org"));
+			if (!NVDSWrap_Library.dllInstance)
+			{
+				// ロード失敗
+				InterlockedDecrement(&NVDSWrap_AttachedProcessCount);
+				return FALSE;
+			}
+			
+			// VSSGetPluginInfoの呼び出し
 			VSSPLUGININFO info;
 			VSSGETPLUGININFO getInfo = (VSSGETPLUGININFO)GetProcAddress(NVDSWrap_Library.dllInstance, "VSSGetPluginInfo");
+			if (!getInfo)
+			{
+				// 見つからない
+				FreeLibrary(NVDSWrap_Library.dllInstance);
+				InterlockedDecrement(&NVDSWrap_AttachedProcessCount);
+				return FALSE;
+			}
 			getInfo(&info);
 			info.VSSDecGetInfo(&NVDSWrap_Library.vssDecInfo);
 
-			//  スレッドのアタッチを通知しないようにする
+			// スレッドのアタッチを通知しないようにする
 			DisableThreadLibraryCalls(hModule);
 		}
 	}
@@ -148,8 +167,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 	case DLL_THREAD_DETACH:
 	case DLL_PROCESS_DETACH:
 	{
-		//  アタッチされたプロセス数のカウント
-		//  静的データの解放
+		// アタッチされたプロセス数のカウント
 		if (InterlockedDecrement(&NVDSWrap_AttachedProcessCount) == 0)
 		{
 			FreeLibrary(NVDSWrap_Library.dllInstance);
@@ -159,4 +177,3 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 	}
 	return TRUE;
 }
-

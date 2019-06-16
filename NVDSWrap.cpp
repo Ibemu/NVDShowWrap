@@ -3,7 +3,9 @@
 // NVDShow ラッパー
 // NVDSWrap.cpp
 //
-// by Ibemu
+// Copyright (c) 2019 Ibemu
+// Released under the MIT license.
+// https://opensource.org/licenses/MIT
 //
 
 #include "NVDSWrap.h"
@@ -21,13 +23,13 @@
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //
-//  ライブラリ関数の定義
+// グローバル関数
 //
 
 NVRESULT NVDSHOWWRAP_EXPORT NVDSHOWWRAP_API CreateInstance_NVDSWrap(LPIVCOM lpivcom)
 {
-	//  インスタンスの作成
-	//  vtable を初期化する必要があるので、new 演算子経由でメモリをアロケーションする。
+	// インスタンスの作成
+	// vtable を初期化する必要があるので、new 演算子経由でメモリをアロケーションする。
 
 	if (!lpivcom)
 	{
@@ -48,23 +50,20 @@ NVRESULT NVDSHOWWRAP_EXPORT NVDSHOWWRAP_API CreateInstance_NVDSWrap(LPIVCOM lpiv
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //
-//  クラスの定義    INVDSWRAP
+// メンバ関数
 //
-
 
 Class_NVDSWrap::Class_NVDSWrap(void)
 {
-	//  デフォルトコンストラクタ
-
-	//  NVDShowインスタンス
+	// デフォルトコンストラクタ
+	// NVDShowインスタンス
 	IVCOM p;
 	VCOM_CREATEINSTANCEPROC createInstance = (VCOM_CREATEINSTANCEPROC)GetProcAddress(NVDSWrap_Library.dllInstance, "CreateInstance_NVDShow");
 	NVDSWrap_Library.vssDecInfo.CreateInstance(NVDSHOW_FOURCC, &p);
 	parent = dynamic_cast<INVAUDIOFILE>(p);
+	hwndInfo = NULL;
 
-		//  基本クラスの保持データを設定する。コンストラクタは基本クラスから順番に呼び出されるので、
-		//  最後に呼び出されることになる、インスタンスのオリジナルの型の情報のみが残る。
-		//  余分な処理が入るのでオーバーヘッドが増えるが、仕様上仕方が無いこと。
+	// 呼ぶ必要あり
 	Class_VCOM::SetCoreData((LPVOID)this, (DWORD) sizeof(Class_NVDSWrap), NVDSWRAP_FOURCC);
 
 	return;
@@ -73,13 +72,12 @@ Class_NVDSWrap::Class_NVDSWrap(void)
 
 Class_NVDSWrap::~Class_NVDSWrap(void)
 {
-	//  デストラクタ
-	//  NVDShowインスタンス
+	// デストラクタ
+	// NVDShowインスタンス
 	parent->Release();
 	
 
-		//  Release 経由以外から呼び出されると、vcd.bIsCreated が TRUE であることがある。
-		//  この場合、正常な解放処理が行われていないはずなので、ASSERT する。
+	// Release済みか判定
 	assert(!vcd.bIsCreated);
 	return;
 }
@@ -127,6 +125,7 @@ inline std::wstring Variant2WString(PROPVARIANT v)
 
 	case VT_VECTOR | VT_LPWSTR:
 	{
+		// ベクターはPropVariantGetStringElemで取るといい？
 		UINT32 size = v.ulVal;
 		std::wostringstream oss;
 		for (UINT32 i = 0; i < size; ++i)
@@ -142,81 +141,77 @@ inline std::wstring Variant2WString(PROPVARIANT v)
 		return oss.str();
 	}
 	}
+
+	// デフォルト
 	return L"";
 }
 
 
 NVRESULT Class_NVDSWrap::Create(LPCVOID lpvParam)
 {
-	//  インスタンスの初期化
-		//  各クラスで必要な初期化処理を記述する。
+	// インスタンスの初期化
 	NVRESULT nvres = NV_OK;
 
-	//  引数を共通の型にキャスト
 	LPCNVAUDIOFILECREATE lpcnvafc = (LPCNVAUDIOFILECREATE)lpvParam;
 
-	//  初期化済みオブジェクトでないかどうかチェックする
 	if (vcd.bIsCreated)
 	{
-		//  初期化済みの場合、エラーにする。
+		// 初期化済みの場合はエラー
 		return NVDSWRAPERR_ALREADYUSED;
 	}
-
 	if (!parent)
 	{
+		// parentがNULLの場合もエラー
 		return NVDSWRAPERR_DOWN_CAST_FAILED;
 	}
 
-	//  引数の正当性をチェック
+	if (lpcnvafc->dwFourCC == NVDSWRAP_FOURCC)
 	{
-		//  クラスの識別子と引数の識別子を比較
-		if (lpcnvafc->dwFourCC == NVDSWRAP_FOURCC)
+		// FourCCをNVDShowのものに差し替え
+		LPNVAUDIOFILECREATE lpnvafc = const_cast<LPNVAUDIOFILECREATE>(lpcnvafc);
+		lpnvafc->dwFourCC = NVDSHOW_FOURCC;
+	}
+	if ((lpcnvafc->dwFourCC == NVAUDIOFILE_FOURCC) || (lpcnvafc->dwFourCC == NVDSHOW_FOURCC) || (lpcnvafc->dwFourCC == NVDSWRAP_FOURCC))
+	{
+		nvres = parent->Create(lpcnvafc);
+
+		if (nvres)
 		{
-			LPNVAUDIOFILECREATE lpnvafc = const_cast<LPNVAUDIOFILECREATE>(lpcnvafc);
-			lpnvafc->dwFourCC = NVDSHOW_FOURCC;
+			return nvres;
 		}
-		if ((lpcnvafc->dwFourCC == NVAUDIOFILE_FOURCC) || (lpcnvafc->dwFourCC == NVDSHOW_FOURCC) || (lpcnvafc->dwFourCC == NVDSWRAP_FOURCC))
+
+		// プロパティを読み込み
+		NVAUDIOFILEINFO afi;
+		DWORD afisize = sizeof(afi);
+		parent->GetInfo(NVAUDIOFILE_FOURCC, &afi, &afisize);
+		IPropertyStore* store = NULL;
+		SHGetPropertyStoreFromParsingName(afi.lpszDataName, NULL, GETPROPERTYSTOREFLAGS::GPS_DEFAULT, __uuidof(IPropertyStore), (void**)& store);
+		if (store)
 		{
-			nvres = parent->Create(lpcnvafc);
+			PROPVARIANT vArtist;
+			PROPVARIANT vTitle;
+			PROPVARIANT vAlbum;
+			PROPVARIANT vYear;
+			PROPVARIANT vTrackNumber;
+			PROPVARIANT vGenre;
+			PROPVARIANT vComment;
 
-			if (nvres)
-			{
-				return nvres;
-			}
+			store->GetValue(PKEY_Music_Artist, &vArtist);
+			store->GetValue(PKEY_Title, &vTitle);
+			store->GetValue(PKEY_Music_AlbumTitle, &vAlbum);
+			store->GetValue(PKEY_Media_Year, &vYear);
+			store->GetValue(PKEY_Music_TrackNumber, &vTrackNumber);
+			store->GetValue(PKEY_Music_Genre, &vGenre);
+			store->GetValue(PKEY_Comment, &vComment);
 
-			//  プロパティを読み込み
-			NVAUDIOFILEINFO afi;
-			DWORD afisize = sizeof(afi);
-			parent->GetInfo(NVAUDIOFILE_FOURCC, &afi, &afisize);
-			IPropertyStore* store = NULL;
-			SHGetPropertyStoreFromParsingName(afi.lpszDataName, NULL, GETPROPERTYSTOREFLAGS::GPS_DEFAULT, __uuidof(IPropertyStore), (void**)& store);
-			if (store)
-			{
-				PROPVARIANT vArtist;
-				PROPVARIANT vTitle;
-				PROPVARIANT vAlbum;
-				PROPVARIANT vYear;
-				PROPVARIANT vTrackNumber;
-				PROPVARIANT vGenre;
-				PROPVARIANT vComment;
-
-				store->GetValue(PKEY_Music_Artist, &vArtist);
-				store->GetValue(PKEY_Title, &vTitle);
-				store->GetValue(PKEY_Music_AlbumTitle, &vAlbum);
-				store->GetValue(PKEY_Media_Year, &vYear);
-				store->GetValue(PKEY_Music_TrackNumber, &vTrackNumber);
-				store->GetValue(PKEY_Music_Genre, &vGenre);
-				store->GetValue(PKEY_Comment, &vComment);
-
-				nvafd.lpnvafcm = NVAFBuildComment(Variant2WString(vArtist).c_str(), Variant2WString(vTitle).c_str(),
-					Variant2WString(vAlbum).c_str(), Variant2WString(vYear).c_str(), Variant2WString(vTrackNumber).c_str(),
-					Variant2WString(vGenre).c_str(), Variant2WString(vComment).c_str());
-			}
+			nvafd.lpnvafcm = NVAFBuildComment(Variant2WString(vArtist).c_str(), Variant2WString(vTitle).c_str(),
+				Variant2WString(vAlbum).c_str(), Variant2WString(vYear).c_str(), Variant2WString(vTrackNumber).c_str(),
+				Variant2WString(vGenre).c_str(), Variant2WString(vComment).c_str());
 		}
-		else
-		{
-			return NVDSWRAPERR_INVALIDPARAMTYPE;
-		}
+	}
+	else
+	{
+		return NVDSWRAPERR_INVALIDPARAMTYPE;
 	}
 
 	if (nvres)
@@ -232,7 +227,6 @@ NVRESULT Class_NVDSWrap::Create(LPCVOID lpvParam)
 
 NVRESULT Class_NVDSWrap::ResetData(void)
 {
-	//  入力ストリームを解放
 	parent->ResetData();
 
 	return Class_NVAudioFile::ResetData();
@@ -241,25 +235,22 @@ NVRESULT Class_NVDSWrap::ResetData(void)
 
 NVRESULT Class_NVDSWrap::QueryInterface(DWORD dwFourCC, LPVOID* lpvInterface)
 {
-	//  インターフェースの取得
-
-		//  dwFourCC によって、適正な型のインターフェースを返す。
-		//  自分自身の型のインターフェースの作成以外は、親クラスのメソッドを呼ぶことで解決すると良いと思われる。
+	// インターフェースの取得
 
 	if (dwFourCC == NVDSWRAP_FOURCC)
 	{
-		//  このクラスのインターフェースを取得なので、返り値を格納、AddRef() したあとに正常終了。
+		// このクラス
 		*lpvInterface = (INVDSWRAP)this;
 		AddRef();
 		return NV_OK;
 	}
 	else if (dwFourCC == NVDSHOW_FOURCC)
 	{
+		// NVDShow
 		return parent->QueryInterface(dwFourCC, lpvInterface);
 	}
 	else
 	{
-		//  自分自身の型以外は、親クラスに任せる
 		return Class_NVAudioFile::QueryInterface(dwFourCC, lpvInterface);
 	}
 }
@@ -267,35 +258,22 @@ NVRESULT Class_NVDSWrap::QueryInterface(DWORD dwFourCC, LPVOID* lpvInterface)
 
 NVRESULT Class_NVDSWrap::AddInterface(DWORD dwFlag)
 {
-	//  インターフェースを参照テーブルに登録する
-
-		//  インスタンスに対する最初の１回の呼び出しでは、
-		//  dwFlag には VCOM_CLASSINTERFACE が入っている。
-		//  それ以降の呼び出しでは、０が入っている。
 	VAddInterface(this, (IVCOM)this, NVDSWRAP_FOURCC, dwFlag);
 
-	//  親クラスのメソッドに引継ぎ
-	//  このとき、dwFlag には ０を指定する。
 	return Class_NVAudioFile::AddInterface(0);
 }
 
 
 NVRESULT Class_NVDSWrap::DeleteInterface(void)
 {
-	//  インターフェースを参照テーブルから削除する
-
 	VDeleteInterface(this);
 
-	//  親クラスのメソッドに引継ぎ
 	return Class_NVAudioFile::DeleteInterface();
 }
 
 
 NVRESULT Class_NVDSWrap::GetInfo(DWORD dwFourCC, LPVOID lpvInfo, LPDWORD lpdwSize)
 {
-	//  フォーマット独自の拡張情報を取得
-
-		//  きちんと初期化されているかチェック
 	if (!vcd.bIsCreated)
 	{
 		return NVDSWRAPERR_NOCREATE;
@@ -307,9 +285,9 @@ NVRESULT Class_NVDSWrap::GetInfo(DWORD dwFourCC, LPVOID lpvInfo, LPDWORD lpdwSiz
 
 NVRESULT Class_NVDSWrap::GetComment(DWORD dwFourCC, LPVOID lpvInfo, LPDWORD lpdwSize)
 {
-	//  曲名などのコメント情報を取得する
+	// 曲名などのコメント情報を取得する
+	// NVDShowのGetCommentではなく自前のものを使う
 
-		//  きちんと初期化されているかチェック
 	if (!vcd.bIsCreated)
 	{
 		return NVDSWRAPERR_NOCREATE;
@@ -328,9 +306,6 @@ NVRESULT Class_NVDSWrap::GetComment(DWORD dwFourCC, LPVOID lpvInfo, LPDWORD lpdw
 
 NVRESULT Class_NVDSWrap::GetPCMWaveFormat(LPPCMWAVEFORMAT lppcmwf)
 {
-	//  PCMWAVEFORMAT 形式の情報を取得する
-
-		//  きちんと初期化されているかチェック
 	if (!vcd.bIsCreated)
 	{
 		return NVDSWRAPERR_NOCREATE;
@@ -342,7 +317,6 @@ NVRESULT Class_NVDSWrap::GetPCMWaveFormat(LPPCMWAVEFORMAT lppcmwf)
 
 NVRESULT Class_NVDSWrap::DecodeToPCMData(LPVOID lpBuffer, LONG lBufferSize, LPLONG lplResultSize)
 {
-	//  きちんと初期化されているかチェック
 	if (!vcd.bIsCreated)
 	{
 		return NVDSWRAPERR_NOCREATE;
@@ -354,7 +328,6 @@ NVRESULT Class_NVDSWrap::DecodeToPCMData(LPVOID lpBuffer, LONG lBufferSize, LPLO
 
 NVRESULT Class_NVDSWrap::Rewind(void)
 {
-	//  きちんと初期化されているかチェック
 	if (!vcd.bIsCreated)
 	{
 		return NVDSWRAPERR_NOCREATE;
@@ -372,6 +345,7 @@ INT_PTR CALLBACK NVDSWrap_InfoDialogProc(HWND hwnd, UINT uMessage, WPARAM wParam
 		SetProp(hwnd, TEXT("invdswrap"), (HANDLE)lParam);
 		SetFocus(GetDlgItem(hwnd, IDC_AUDIOFILE_FILENAME));
 
+		// NVAUDIOFILEINFOはNVDShowが持ってるのでGetInfoを呼ぶしかない
 		TCHAR lpszBuf[1024];
 		NVAUDIOFILEINFO afi;
 		DWORD afisize = sizeof(NVAUDIOFILEINFO);
@@ -435,9 +409,9 @@ INT_PTR CALLBACK NVDSWrap_InfoDialogProc(HWND hwnd, UINT uMessage, WPARAM wParam
 
 NVRESULT Class_NVDSWrap::FileInfoDialog(HWND hwnd)
 {
-	//  ファイル情報のダイアログを表示
-
-	//extern HINSTANCE hinstNVWave;
+	// ファイル情報のダイアログを表示
+	// 自分で作る
+	// フィルタの設定ボタンは未実装
 
 	if (!vcd.bIsCreated)
 	{
@@ -466,7 +440,6 @@ NVRESULT Class_NVDSWrap::FileInfoDialog(HWND hwnd)
 
 NVRESULT Class_NVDSWrap::GetCurrentPosition(LPQWUNION lpquPosition, DWORD dwFlag)
 {
-	//  きちんと初期化されているかチェック
 	if (!vcd.bIsCreated)
 	{
 		return NVDSWRAPERR_NOCREATE;
@@ -478,7 +451,6 @@ NVRESULT Class_NVDSWrap::GetCurrentPosition(LPQWUNION lpquPosition, DWORD dwFlag
 
 NVRESULT Class_NVDSWrap::SetCurrentPosition(QWUNION quPosition, DWORD dwFlag)
 {
-	//  きちんと初期化されているかチェック
 	if (!vcd.bIsCreated)
 	{
 		return NVDSWRAPERR_NOCREATE;
@@ -489,7 +461,6 @@ NVRESULT Class_NVDSWrap::SetCurrentPosition(QWUNION quPosition, DWORD dwFlag)
 
 NVRESULT Class_NVDSWrap::ReferenceTimeToSamples(QWUNION quReferenceTime, LPQWUNION lpquSamples)
 {
-	//  参照時間(マイクロ秒単位)からサンプル数へ変換する
 	if (!vcd.bIsCreated)
 	{
 		return VAFERR_NOCREATE;
@@ -500,7 +471,6 @@ NVRESULT Class_NVDSWrap::ReferenceTimeToSamples(QWUNION quReferenceTime, LPQWUNI
 
 NVRESULT Class_NVDSWrap::SamplesToReferenceTime(QWUNION quSamples, LPQWUNION lpquReferenceTime)
 {
-	//  サンプル数から参照時間(マイクロ秒単位)へ変換する
 	if (!vcd.bIsCreated)
 	{
 		return VAFERR_NOCREATE;
@@ -511,7 +481,6 @@ NVRESULT Class_NVDSWrap::SamplesToReferenceTime(QWUNION quSamples, LPQWUNION lpq
 
 NVRESULT Class_NVDSWrap::GetReferenceTime(LPQWUNION lpquReferenceTime)
 {
-	//  現在の参照時間(マイクロ秒単位)を取得
 	if (!vcd.bIsCreated)
 	{
 		return VAFERR_NOCREATE;
@@ -522,7 +491,6 @@ NVRESULT Class_NVDSWrap::GetReferenceTime(LPQWUNION lpquReferenceTime)
 
 NVRESULT Class_NVDSWrap::GetTotalTime(LPQWUNION lpquTotalTime)
 {
-	//  マイクロ秒単位で全再生時間を取得
 	if (!vcd.bIsCreated)
 	{
 		return VAFERR_NOCREATE;
@@ -530,5 +498,3 @@ NVRESULT Class_NVDSWrap::GetTotalTime(LPQWUNION lpquTotalTime)
 
 	return parent->GetTotalTime(lpquTotalTime);
 }
-
-
