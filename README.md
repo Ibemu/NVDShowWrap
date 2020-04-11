@@ -4,10 +4,8 @@ Northern Verse ([@Project9k](https://twitter.com/project9k))ì‚ÌuLilith‚Åg‚í‚
 m4a‚È‚ÇAƒGƒNƒXƒvƒ[ƒ‰[‚Å•\¦‚Å‚«‚é‚à‚Ì‚É‚Í‘½•ª‘Î‰‚µ‚Ä‚¢‚é‚Æv‚¢‚Ü‚·B
 
 ## “®ìŠm”FŠÂ‹«
-- Windows 10 Pro version 1809 (October 2018 Update) x64
-- uLilith 1.0.0 (2019/01/01) (x64)
-
-¦x86”Å‚Í‚µ‚Ä‚Ü‚¹‚ñB
+- Windows 10 Pro version 1909
+- uLilith 1.0.0 (2019/01/01)
 
 ## ƒCƒ“ƒXƒg[ƒ‹
 1. [Project9k‚ÌTwitter](https://twitter.com/project9k)‚©‚çuLilith‚ğƒCƒ“ƒXƒg[ƒ‹‚µ‚Ü‚·B
@@ -24,7 +22,7 @@ m4a‚È‚ÇAƒGƒNƒXƒvƒ[ƒ‰[‚Å•\¦‚Å‚«‚é‚à‚Ì‚É‚Í‘½•ª‘Î‰‚µ‚Ä‚¢‚é‚Æv‚¢‚Ü‚·B
 
 ## ƒrƒ‹ƒh
 ### ŠÂ‹«
-- Windows 10 Pro version 1809 (October 2018 Update) x64
+- Windows 10 Pro version 1909
 - Visual Studio Community 2019
 
 ### ˆË‘¶ŠÖŒW
