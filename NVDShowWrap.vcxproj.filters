@@ -32,6 +32,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />
+    <None Include="NVDShowWrap.def">
+      <Filter>ソース ファイル</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="LICENSE.txt" />

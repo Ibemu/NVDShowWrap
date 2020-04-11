@@ -1,0 +1,4 @@
+LIBRARY	"NVDShowWrap.vss"
+
+EXPORTS
+	VSSGetPluginInfo
